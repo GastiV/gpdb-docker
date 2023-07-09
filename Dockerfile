@@ -2,14 +2,20 @@
 #  Dockerfile for a GPDB SNE Sandbox Base Image
 #
 
-FROM centos:6.7
+FROM centos:centos7.9.2009
 MAINTAINER dbaskette@pivotal.io
 
 COPY * /tmp/
+
+COPY systemctl.py /usr/bin/systemctl
+#RUN chmod a+x /usr/bin/systemctl
+
+RUN yum provides */netstat
 RUN echo root:pivotal | chpasswd \
-        && yum install -y unzip which tar more util-linux-ng passwd openssh-clients openssh-server ed m4; yum clean all \
+        && yum install -y unzip which tar more util-linux-ng passwd openssh-clients openssh-server ed m4 python2 net-tools; yum clean all \
         && unzip /tmp/greenplum-db-4.3.7.1-build-1-RHEL5-x86_64.zip -d /tmp/ \
         && rm /tmp/greenplum-db-4.3.7.1-build-1-RHEL5-x86_64.zip \
+        && chmod a+x /usr/bin/systemctl \
         && sed -i s/"more << EOF"/"cat << EOF"/g /tmp/greenplum-db-4.3.7.1-build-1-RHEL5-x86_64.bin \
         && echo -e "yes\n\nyes\nyes\n" | /tmp/greenplum-db-4.3.7.1-build-1-RHEL5-x86_64.bin \
         && rm /tmp/greenplum-db-4.3.7.1-build-1-RHEL5-x86_64.bin \
@@ -30,9 +36,10 @@ RUN echo root:pivotal | chpasswd \
         && mkdir -p /gpdata/master /gpdata/segments \
         && chown -R gpadmin: /gpdata \
         && chown -R gpadmin: /usr/local/green* \
-        && service sshd start \
-        && su gpadmin -l -c "source /usr/local/greenplum-db/greenplum_path.sh;gpssh-exkeys -f /tmp/gpdb-hosts"  \
-        && su gpadmin -l -c "source /usr/local/greenplum-db/greenplum_path.sh;gpinitsystem -a -c  /tmp/gpinitsystem_singlenode -h /tmp/gpdb-hosts; exit 0 "\
+        && ssh-keygen -A \
+        && systemctl start sshd \
+        && su gpadmin -l -c "source /usr/local/greenplum-db/greenplum_path.sh;gpssh-exkeys -f /tmp/gpdb-hosts"\
+        && su gpadmin -l -c "source /usr/local/greenplum-db/greenplum_path.sh;gpinitsystem -a -c  /tmp/gpinitsystem_singlenode -h /tmp/gpdb-hosts; exit 0 " \
         && su gpadmin -l -c "export MASTER_DATA_DIRECTORY=/gpdata/master/gpseg-1;source /usr/local/greenplum-db/greenplum_path.sh;psql -d template1 -c \"alter user gpadmin password 'pivotal'\"; createdb gpadmin;  exit 0"
 
 EXPOSE 5432 22
@@ -41,7 +48,7 @@ VOLUME /gpdata
 # Set the default command to run when starting the container
 
 CMD echo "127.0.0.1 $(cat ~/orig_hostname)" >> /etc/hosts \
-        && service sshd start \
+        && systemctl start sshd \
 #       && sysctl -p \
         && su gpadmin -l -c "/usr/local/bin/run.sh" \
         && /bin/bash
